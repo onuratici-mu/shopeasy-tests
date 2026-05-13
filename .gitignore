@@ -4,3 +4,4 @@ target/
 .DS_Store
 *.class
 .jqwik-database/
+.jqwik-database
