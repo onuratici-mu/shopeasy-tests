@@ -1,6 +1,7 @@
 package shopeasy;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -144,5 +145,49 @@ class PriceCalculatorSpecTest {
         double result = calculator.applyTaxOnly(100.0, 18.0);
 
         assertThat(result).isCloseTo(118.0, within(0.0001));
+    }
+    /**
+     * Invalid partition: negative base price.
+     * The contract says basePrice must be >= 0, so this should fail with AssertionError.
+     */
+    @Test
+    void negativeBasePriceViolatesContract() {
+        assertThatThrownBy(() -> calculator.calculate(-1.0, 10.0, 20.0))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("basePrice must be >= 0");
+    }
+
+    /**
+     * Invalid partition: discountRate below 0 or above 100.
+     * These are outside the valid discount domain.
+     */
+    @ParameterizedTest(name = "invalid discount={0}% should violate contract")
+    @CsvSource({
+            "-0.1",
+            "-1.0",
+            "100.1",
+            "101.0"
+    })
+    void invalidDiscountRateViolatesContract(double discountRate) {
+        assertThatThrownBy(() -> calculator.calculate(100.0, discountRate, 20.0))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("discountRate must be between 0 and 100");
+    }
+
+    /**
+     * Invalid partition: taxRate below 0 or above 100.
+     * These are outside the valid tax domain.
+     */
+    @ParameterizedTest(name = "invalid tax={0}% should violate contract")
+    @CsvSource({
+            "-0.1",
+            "-1.0",
+            "100.1",
+            "101.0"
+    })
+    void invalidTaxRateViolatesContract(double taxRate) {
+        assertThatThrownBy(() -> calculator.calculate(100.0, 10.0, taxRate))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("taxRate must be between 0 and 100");
     }
 }
