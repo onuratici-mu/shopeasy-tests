@@ -1,41 +1,26 @@
 package shopeasy;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.anyString;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.assertj.core.api.Assertions.*;
-import static org.mockito.Mockito.*;
-
 /**
- * Task 5 – Mocks &amp; Stubs (Chapter 6)
+ * Task 5 – Mocks & Stubs
  *
- * <p>Target class: {@link OrderProcessor}
- *
- * <p>Use Mockito to mock {@link InventoryService} and {@link PaymentGateway},
- * then test {@link OrderProcessor#process(String, ShoppingCart)} in isolation.
- *
- * <h3>Required scenarios (at least 4)</h3>
- * <ol>
- *   <li><b>Happy path</b> — inventory available, payment succeeds → non-null {@link Order} returned.</li>
- *   <li><b>Inventory failure</b> — {@code isAvailable()} returns {@code false} for at least one item
- *       → method returns {@code null} AND {@code charge()} is <em>never</em> called.</li>
- *   <li><b>Payment failure</b> — inventory OK, {@code charge()} returns {@code false}
- *       → method returns {@code null}.</li>
- *   <li><b>Partial quantity</b> — define the expected behaviour when only some items
- *       pass the inventory check, and write a test for it.</li>
- * </ol>
- *
- * <h3>Verification</h3>
- * Use {@code verify(paymentGateway, never()).charge(...)} to assert that
- * payment is never attempted when inventory is insufficient.
- *
- * <h3>Reflection (add to your report)</h3>
- * Answer: What does mocking allow you to test that you could not test otherwise?
- * What does it prevent you from testing? When is mocking a bad idea?
+ * These tests isolate OrderProcessor from its two external dependencies:
+ * InventoryService and PaymentGateway.
  */
 @ExtendWith(MockitoExtension.class)
 class OrderProcessorMockTest {
@@ -51,32 +36,141 @@ class OrderProcessorMockTest {
 
     private ShoppingCart cart;
     private Product widget;
+    private Product keyboard;
 
     @BeforeEach
     void setUp() {
-        cart   = new ShoppingCart();
+        cart = new ShoppingCart();
         widget = new Product("P001", "Widget", 25.0, 100);
+        keyboard = new Product("P002", "Keyboard", 40.0, 50);
     }
 
-    // -----------------------------------------------------------------------
-    // TODO: Write your mock-based tests below.
-    //
-    // EXAMPLE STRUCTURE — happy path:
-    //
-    // @Test
-    // void process_inventoryOkAndPaymentOk_returnsOrder() {
-    //     cart.addItem(widget, 2);
-    //
-    //     when(inventoryService.isAvailable(widget, 2)).thenReturn(true);
-    //     when(paymentGateway.charge("customer-1", 50.0)).thenReturn(true);
-    //
-    //     Order order = orderProcessor.process("customer-1", cart);
-    //
-    //     assertThat(order).isNotNull();
-    //     assertThat(order.getCustomerId()).isEqualTo("customer-1");
-    //     assertThat(order.getTotal()).isEqualTo(50.0);
-    //     verify(paymentGateway).charge("customer-1", 50.0);
-    // }
-    // -----------------------------------------------------------------------
+    /**
+     * Scenario 1: Happy path.
+     * Inventory is available and payment succeeds, so an Order should be created.
+     */
+    @Test
+    void processInventoryAvailableAndPaymentSucceedsReturnsOrder() {
+        cart.addItem(widget, 2); // total = 50
 
+        when(inventoryService.isAvailable(widget, 2)).thenReturn(true);
+        when(paymentGateway.charge("customer-1", 50.0)).thenReturn(true);
+
+        Order order = orderProcessor.process("customer-1", cart);
+
+        assertThat(order).isNotNull();
+        assertThat(order.getCustomerId()).isEqualTo("customer-1");
+        assertThat(order.getItems()).hasSize(1);
+        assertThat(order.getTotal()).isCloseTo(50.0, within(0.0001));
+
+        verify(inventoryService).isAvailable(widget, 2);
+        verify(paymentGateway).charge("customer-1", 50.0);
+    }
+
+    /**
+     * Scenario 2: Inventory failure.
+     * If inventory is unavailable, checkout should stop and payment should never be attempted.
+     */
+    @Test
+    void processInventoryUnavailableReturnsNullAndDoesNotChargePayment() {
+        cart.addItem(widget, 2);
+
+        when(inventoryService.isAvailable(widget, 2)).thenReturn(false);
+
+        Order order = orderProcessor.process("customer-1", cart);
+
+        assertThat(order).isNull();
+
+        verify(inventoryService).isAvailable(widget, 2);
+        verify(paymentGateway, never()).charge(anyString(), anyDouble());
+    }
+
+    /**
+     * Scenario 3: Payment failure.
+     * Inventory is available, but payment fails, so no Order should be created.
+     */
+    @Test
+    void processPaymentFailsReturnsNull() {
+        cart.addItem(widget, 2); // total = 50
+
+        when(inventoryService.isAvailable(widget, 2)).thenReturn(true);
+        when(paymentGateway.charge("customer-1", 50.0)).thenReturn(false);
+
+        Order order = orderProcessor.process("customer-1", cart);
+
+        assertThat(order).isNull();
+
+        verify(inventoryService).isAvailable(widget, 2);
+        verify(paymentGateway).charge("customer-1", 50.0);
+    }
+
+    /**
+     * Scenario 4: Partial quantity / insufficient requested quantity.
+     * Expected behavior: if the requested quantity cannot be fully supplied,
+     * InventoryService returns false, the order is not created, and payment is not charged.
+     */
+    @Test
+    void processPartialQuantityUnavailableReturnsNullAndDoesNotCharge() {
+        cart.addItem(widget, 5);
+
+        when(inventoryService.isAvailable(widget, 5)).thenReturn(false);
+
+        Order order = orderProcessor.process("customer-1", cart);
+
+        assertThat(order).isNull();
+
+        verify(inventoryService).isAvailable(widget, 5);
+        verify(paymentGateway, never()).charge(anyString(), anyDouble());
+    }
+
+    /**
+     * Scenario 5: Multiple items where one item is unavailable.
+     * This checks that OrderProcessor stops when any cart line fails inventory.
+     */
+    @Test
+    void processOneUnavailableItemInMultiItemCartReturnsNullAndDoesNotCharge() {
+        cart.addItem(widget, 2);    // 50
+        cart.addItem(keyboard, 1);  // 40
+
+        when(inventoryService.isAvailable(widget, 2)).thenReturn(true);
+        when(inventoryService.isAvailable(keyboard, 1)).thenReturn(false);
+
+        Order order = orderProcessor.process("customer-1", cart);
+
+        assertThat(order).isNull();
+
+        verify(inventoryService).isAvailable(widget, 2);
+        verify(inventoryService).isAvailable(keyboard, 1);
+        verify(paymentGateway, never()).charge(anyString(), anyDouble());
+    }
+
+    /**
+     * Validation case: empty cart.
+     * Empty carts are rejected before inventory or payment services are called.
+     */
+    @Test
+    void processEmptyCartThrowsExceptionAndDoesNotCallDependencies() {
+        assertThatThrownBy(() -> orderProcessor.process("customer-1", cart))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("cart must not be empty");
+
+        verifyNoInteractions(inventoryService);
+        verifyNoInteractions(paymentGateway);
+    }
+
+    /**
+     * Validation case: invalid customer id.
+     * A blank customer id is rejected before external services are called.
+     */
+    @Test
+    void processBlankCustomerIdThrowsExceptionAndDoesNotCallDependencies() {
+        cart.addItem(widget, 1);
+
+        assertThatThrownBy(() -> orderProcessor.process("   ", cart))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("customerId must not be null or blank");
+
+        verifyNoInteractions(inventoryService);
+        verifyNoInteractions(paymentGateway);
+    }
 }
