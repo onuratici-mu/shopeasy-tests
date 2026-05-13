@@ -1,33 +1,23 @@
 package shopeasy;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
-import static org.assertj.core.api.Assertions.*;
-
 /**
- * Task 1 – Specification-Based Testing (Chapter 2)
+ * Task 1 – Specification-Based Testing
  *
- * <p>Target class: {@link PriceCalculator}
+ * Target: PriceCalculator.calculate(basePrice, discountRate, taxRate)
  *
- * <p>Your goal is to test {@code PriceCalculator.calculate(basePrice, discountRate, taxRate)}
- * using the domain testing technique from Chapter 2:
- * <ol>
- *   <li>Identify equivalence partitions for each input dimension.</li>
- *   <li>Identify boundary values between partitions (on-point / off-point).</li>
- *   <li>Write at least 10 meaningful test cases that cover both partitions and boundaries.</li>
- *   <li>Use {@code @ParameterizedTest} with {@code @CsvSource} for tests that share structure.</li>
- *   <li>Add a comment above each test method explaining which partition or boundary it covers.</li>
- * </ol>
+ * Input dimensions:
+ * - basePrice: zero, positive, large positive
+ * - discountRate: 0%, typical between 0 and 100, 100%
+ * - taxRate: 0%, typical between 0 and 100, 100%
  *
- * <h3>Input dimensions to consider</h3>
- * <ul>
- *   <li><b>basePrice</b>  – zero, positive, very large</li>
- *   <li><b>discountRate</b> – 0 (no discount), (0,100) typical, 100 (full discount)</li>
- *   <li><b>taxRate</b>    – 0 (no tax), (0,100) typical, 100 (100% tax)</li>
- * </ul>
+ * These tests focus on equivalence partitions and boundary values.
  */
 class PriceCalculatorSpecTest {
 
@@ -38,40 +28,121 @@ class PriceCalculatorSpecTest {
         calculator = new PriceCalculator();
     }
 
-    // -----------------------------------------------------------------------
-    // TODO: Write your tests below.
-    //
-    // EXAMPLE STRUCTURE (replace with real cases):
-    //
-    // /** Partition: zero base price — result must always be 0 regardless of rates */
-    // @Test
-    // void zeroPriceAlwaysReturnsZero() {
-    //     assertThat(calculator.calculate(0, 20, 10)).isEqualTo(0.0);
-    // }
-    //
-    // /** Boundary: discountRate at lower bound (0%) — no reduction applied */
-    // @Test
-    // void discountRateZeroMeansNoDiscount() {
-    //     double result = calculator.calculate(100, 0, 0);
-    //     assertThat(result).isEqualTo(100.0);
-    // }
-    //
-    // /** Boundary: discountRate at upper bound (100%) — full discount wipes price to 0 */
-    // @Test
-    // void discountRateHundredMeansFullDiscount() {
-    //     double result = calculator.calculate(100, 100, 0);
-    //     assertThat(result).isEqualTo(0.0);
-    // }
-    //
-    // /** Partition: typical values — check formula correctness */
-    // @ParameterizedTest(name = "base={0}, disc={1}%, tax={2}% => {3}")
-    // @CsvSource({
-    //     "100.0, 10.0, 20.0, 108.0",
-    //     "200.0,  0.0, 10.0, 220.0",
-    // })
-    // void typicalValues(double base, double disc, double tax, double expected) {
-    //     assertThat(calculator.calculate(base, disc, tax)).isCloseTo(expected, within(0.001));
-    // }
-    // -----------------------------------------------------------------------
+    /**
+     * Partition: zero base price.
+     * No matter what valid discount and tax are used, the final price should stay zero.
+     */
+    @ParameterizedTest(name = "base=0, discount={0}%, tax={1}% should return 0")
+    @CsvSource({
+            "0.0,   0.0",
+            "10.0, 20.0",
+            "50.0, 50.0",
+            "100.0, 100.0"
+    })
+    void zeroBasePriceAlwaysReturnsZero(double discountRate, double taxRate) {
+        double result = calculator.calculate(0.0, discountRate, taxRate);
 
+        assertThat(result).isEqualTo(0.0);
+    }
+
+    /**
+     * Boundary: discountRate at lower bound 0%.
+     * A 0% discount means the base price should not be reduced before tax.
+     */
+    @Test
+    void zeroDiscountDoesNotReduceBasePrice() {
+        double result = calculator.calculate(100.0, 0.0, 20.0);
+
+        assertThat(result).isCloseTo(120.0, within(0.0001));
+    }
+
+    /**
+     * Boundary: discountRate at upper bound 100%.
+     * A 100% discount removes the whole price, so tax should also be zero.
+     */
+    @Test
+    void hundredPercentDiscountReturnsZeroEvenWithTax() {
+        double result = calculator.calculate(100.0, 100.0, 20.0);
+
+        assertThat(result).isCloseTo(0.0, within(0.0001));
+    }
+
+    /**
+     * Boundary: taxRate at lower bound 0%.
+     * A 0% tax means the result should only include the discount calculation.
+     */
+    @Test
+    void zeroTaxAppliesOnlyDiscount() {
+        double result = calculator.calculate(200.0, 25.0, 0.0);
+
+        assertThat(result).isCloseTo(150.0, within(0.0001));
+    }
+
+    /**
+     * Boundary: taxRate at upper bound 100%.
+     * A 100% tax doubles the discounted price.
+     */
+    @Test
+    void hundredPercentTaxDoublesDiscountedPrice() {
+        double result = calculator.calculate(100.0, 25.0, 100.0);
+
+        assertThat(result).isCloseTo(150.0, within(0.0001));
+    }
+
+    /**
+     * Partition: typical valid values.
+     * These cases check the normal formula for common base, discount, and tax combinations.
+     */
+    @ParameterizedTest(name = "base={0}, discount={1}%, tax={2}% => expected={3}")
+    @CsvSource({
+            "100.0, 10.0, 20.0, 108.0",
+            "200.0,  0.0, 10.0, 220.0",
+            "80.0,  50.0, 25.0, 50.0",
+            "150.0, 20.0, 10.0, 132.0",
+            "99.99, 10.0, 10.0, 98.9901"
+    })
+    void typicalValidInputsCalculateCorrectFinalPrice(
+            double basePrice,
+            double discountRate,
+            double taxRate,
+            double expected
+    ) {
+        double result = calculator.calculate(basePrice, discountRate, taxRate);
+
+        assertThat(result).isCloseTo(expected, within(0.0001));
+    }
+
+    /**
+     * Partition: very large valid base price.
+     * This checks that the formula still works for large prices and does not accidentally overflow
+     * or lose the main calculation logic.
+     */
+    @Test
+    void veryLargeBasePriceStillUsesSameFormula() {
+        double result = calculator.calculate(1_000_000.0, 10.0, 20.0);
+
+        assertThat(result).isCloseTo(1_080_000.0, within(0.0001));
+    }
+
+    /**
+     * Convenience method partition: discount-only calculation.
+     * This checks that applyDiscountOnly delegates correctly to calculate with 0% tax.
+     */
+    @Test
+    void applyDiscountOnlyUsesZeroTax() {
+        double result = calculator.applyDiscountOnly(100.0, 30.0);
+
+        assertThat(result).isCloseTo(70.0, within(0.0001));
+    }
+
+    /**
+     * Convenience method partition: tax-only calculation.
+     * This checks that applyTaxOnly delegates correctly to calculate with 0% discount.
+     */
+    @Test
+    void applyTaxOnlyUsesZeroDiscount() {
+        double result = calculator.applyTaxOnly(100.0, 18.0);
+
+        assertThat(result).isCloseTo(118.0, within(0.0001));
+    }
 }
